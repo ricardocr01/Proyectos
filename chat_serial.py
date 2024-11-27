@@ -53,7 +53,7 @@ class SerialChat(ctk.CTk):
         self.inText.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
         self.frm3.columnconfigure(0, weight=1)  # Permito que la caja de texto se ajuste horizontalmente
 
-        # --- Eventos para manejar el texto provisional y el botón ---
+        # --- Eventos para manejar el texto provisional y el botón enviar ---
         self.inText.bind("<FocusIn>", self.clear_texprov)  # Cuando hago clic en la caja, se borra el texto provisional
         self.inText.bind("<FocusOut>", self.restore_texprov)  # Si salgo de la caja sin escribir, se restaura el texto provisional
         self.inText.bind("<KeyRelease>", self.toggle_send_button)  # Muestra el botón de enviar cuando hay texto
@@ -96,17 +96,18 @@ class SerialChat(ctk.CTk):
     # --- Funciones para manejar el hilo de recepción ---
     def start_receive_thread(self):
         """Inicia un hilo para recibir mensajes del puerto serial."""
-        self.receive_thread = threading.Thread(target=self.receive_messages, daemon=True)  # Defino el hilo como un demonio
+        # El keyword daemon=True permite eliminar el thread si es que el programa principal se cierra
+        self.receive_thread = threading.Thread(target=self.receive_messages, daemon=True)  # Defino el hilo como daemon
         self.receive_thread.start()  # Inicio el hilo
 
     def receive_messages(self):
         """Recibe mensajes del puerto serial y los muestra en el chat."""
         while not self.stop_thread:  # Mientras el hilo esté activo
-            if self.serial_conn and self.connected:
+            if self.serial_conn and self.connected: #Comprobamos el estado de la conexion serial
                 try:
                     if self.serial_conn.in_waiting > 0:  # Verifico si hay datos en el buffer serial
-                        message = self.serial_conn.readline().decode('utf-8').strip()  # Leo y decodifico el mensaje
-                        self.log_message(message, received=True)  # Lo muestro en el chat como un mensaje recibido
+                        message = self.serial_conn.readline().decode('utf-8').strip()  # Leo, decodifico, elimino espacios y saltos de linea al final del mensaje
+                        self.log_message(message, received=True)  # Llamo a la funcion para mostrar en el chat como un mensaje recibido
                 except Exception as e:
                     # Si hay un error al recibir, lo muestro
                     self.log_message(f"Error al recibir: {e}", received=True)
@@ -115,11 +116,11 @@ class SerialChat(ctk.CTk):
     # --- Funciones para enviar mensajes ---
     def send_message(self):
         """Envía un mensaje al puerto serial."""
-        if self.serial_conn and self.connected:
+        if self.serial_conn and self.connected: #Comprobamos el estado de la conexion serial
             msg = self.inText.get("0.0", "end").strip()  # Obtengo el mensaje de la caja de entrada
             if msg:  # Si el mensaje no está vacío
                 try:
-                    self.serial_conn.write((msg + '\n').encode("utf-8"))  # Envío el mensaje al puerto serial
+                    self.serial_conn.write((msg + '\n').encode("utf-8"))  # Envío el mensaje codificado al puerto serial
                     self.log_message(msg, received=False)  # Lo muestro en el chat como un mensaje enviado
                     self.inText.delete("0.0", "end")  # Limpio la caja de entrada
                 except Exception as e:
@@ -128,7 +129,9 @@ class SerialChat(ctk.CTk):
 
     def send_message_from_enter(self, event):
         """Envia el mensaje al presionar Enter."""
+        #Declaramos el parametro event, ya que el metodo bind envia ese parametro
         self.send_message()  # Llamo a la función de enviar
+        #Evito que la tecla Enter agregue un salto de línea en la caja de texto
         return "break"  # Previene el salto de línea en la caja de texto
 
     # --- Registro de mensajes en el historial ---
@@ -154,31 +157,38 @@ class SerialChat(ctk.CTk):
         msg_frame.pack(padx=10, pady=5, anchor="e" if not received else "w")  # Alineo según sea enviado o recibido
 
         # Hago scroll automáticamente al final
-        self.frm2.update_idletasks()
-        self.frm2._parent_canvas.yview_moveto(1.0)  #En el eje vertical, me muevo a la parte mas baja
+        self.frm2.update_idletasks()   #Aseguro que los cambios visuales se procesen
+        self.frm2._parent_canvas.yview_moveto(1.0)  #En el eje vertical, me muevo a la parte mas baja _0 inicio - 1 fin_
 
     # --- Mensajes de sistema ---
     def display_center_message(self, text):
         """Muestra un mensaje centrado en la ventana."""
+        #Para evitar repetir codigo, creo una funcion encargada de mostrar mensajes al usuario
         center_label = ctk.CTkLabel(self.frm2, text=text, font=("Arial", 12, "bold"), justify="center", wraplength=450)
         center_label.pack(pady=10)
 
     # --- Texto provisional en la caja de entrada ---
     def clear_texprov(self, event):
         """Elimina el texto provisional al hacer clic o escribir."""
-        if self.inText.get("0.0", "end").strip() == self.provisional_text:
-            self.inText.delete("0.0", "end")
+        #Declaramos el parametro event, ya que el metodo bind envia ese parametro
+        if self.inText.get("0.0", "end").strip() == self.provisional_text:  #Compruebo si el texto provisional está siendo mostrado 
+            self.inText.delete("0.0", "end")  
+            #Configuramos el texto con color blanco, ya que es el usuario quien está escribiendo
             self.inText.configure(text_color="white")
 
     def restore_texprov(self, event):
         """Restaura el texto provisional si el campo está vacío."""
+        #Compruebo si, después de eliminar los espacios en blanco, el cuadro de texto está vacío
         if not self.inText.get("0.0", "end").strip():
-            self.inText.insert("0.0", self.provisional_text)
-            self.inText.configure(text_color="gray")
+            self.inText.insert("0.0", self.provisional_text)  #Inserto el texto provisional al principio del cuadro de texto
+            self.inText.configure(text_color="gray")  #Cambio el texto a gris ya que indica que es un texto provisional
 
     def toggle_send_button(self, event=None):
         """Muestra u oculta el botón de enviar según el contenido de la caja."""
+        #Declaro el parametro event como None para llamar a la funcion directamente sin un evento KeyRelease
+        #como cuando se pegue un mensaje con el mouse, se podrá controlar el mismo funcionamiento con futuras implementaciones
         content = self.inText.get("0.0", "end").strip()
+        #Compruebo si content no está vacío y si no es el texto provisional
         if content and content != self.provisional_text:
             self.btnSend.grid(row=0, column=1, padx=5, pady=5)  # Muestra el botón si hay texto
         else:
